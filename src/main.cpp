@@ -38,7 +38,6 @@ inline static int8_t ack()
     delayMicroseconds(3);
     digitalWrite(ACK, HIGH);
     digitalWrite(LED_PIN, HIGH);
-    // pinMode(ACK, INPUT);
     return 0;
 }
 
@@ -48,18 +47,13 @@ bool knownCommand(const uint8_t &cmd)
            (cmd == 0x47) || (cmd == 0x4C) || (cmd == 0x4D);
 }
 
-void exchangeCmdData(uint8_t &cmd, const uint8_t &data)
-{
-    cmd = SPI.transfer(data);
-}
+void exchangeCmdData(uint8_t &cmd, const uint8_t &data) { cmd = SPI.transfer(data); }
 
 void loop()
 {
-    // SPI.end();
     pinMode(ACK, INPUT);
 
     delay(14);
-    // while (digitalRead(ATT));
     Wire.beginTransmission(I2C_RPI_SLAVE_ADDR);
     Wire.write('r');
     Wire.endTransmission();
@@ -67,13 +61,13 @@ void loop()
     Wire.requestFrom(I2C_RPI_SLAVE_ADDR, 6);
     unsigned i = 0;
     while (Wire.available())
-    {                          // slave may send less than requested
-        char c = Wire.read();  // receive a byte as character
+    {
+        char c = Wire.read();
         buttons[i++] = (uint8_t)c;
     }
 
     static bool analogChanged = false;
-    if (buttons[0] == 0xFC) // SELECT + R3
+    if (buttons[0] == 0xFC)  // SELECT + R3
     {
         if (!analogChanged)
         {
@@ -86,13 +80,10 @@ void loop()
         analogChanged = false;
     }
 
-    // SPI.beginTransactionSlave(SPISettings(50000000, LSBFIRST, SPI_MODE3, DATA_SIZE_8BIT));
     pinMode(ACK, OUTPUT);
-    // }
-    // if (digitalRead(ATT)) return;
+
     exchangeCmdData(cmd[0], 0xFF);
-    // printf("LOOOP\n");
-    if (cmd[0] != 0x01) return;  // Controler not addressed, skip this data
+    if (cmd[0] != 0x01) return;
     ack();
 
     if (configMode)
