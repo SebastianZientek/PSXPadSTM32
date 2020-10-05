@@ -26,6 +26,8 @@ void setup()
     delay(100);
     pinMode(ACK, OUTPUT);
     pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, analogMode ? HIGH : LOW);
+
 
     SPI.beginTransactionSlave(SPISettings(50000000, LSBFIRST, SPI_MODE3, DATA_SIZE_8BIT));
 }
@@ -34,10 +36,8 @@ inline static int8_t ack()
 {
     delayMicroseconds(5);
     digitalWrite(ACK, LOW);
-    digitalWrite(LED_PIN, LOW);
     delayMicroseconds(3);
     digitalWrite(ACK, HIGH);
-    digitalWrite(LED_PIN, HIGH);
     return 0;
 }
 
@@ -73,6 +73,8 @@ void loop()
         {
             analogMode = !analogMode;
             analogChanged = true;
+
+            digitalWrite(LED_PIN, analogMode ? HIGH : LOW);
         }
     }
     else
@@ -81,9 +83,10 @@ void loop()
     }
 
     pinMode(ACK, OUTPUT);
+    SPI.beginTransactionSlave(SPISettings(50000000, LSBFIRST, SPI_MODE3, DATA_SIZE_8BIT));
 
     exchangeCmdData(cmd[0], 0xFF);
-    if (cmd[0] != 0x01) return;
+    if (cmd[0] != 0x01) goto TERMINATE_LOOP;
     ack();
 
     if (configMode)
@@ -101,7 +104,7 @@ void loop()
 
     if (!knownCommand(cmd[1]))
     {
-        return;
+        goto TERMINATE_LOOP;
     }
     ack();
 
@@ -200,5 +203,17 @@ void loop()
         }
     }
     break;
+    case 0x4D:
+        for (int i = 0; i < 6; ++i)
+        {
+            ack();
+            exchangeCmdData(cmd[3], 0xFF);
+        }
+        Serial1.println("Map vibration motors");
+    break;
     }
+
+TERMINATE_LOOP:
+    SPI.endTransaction();
+    SPI.end();
 }
