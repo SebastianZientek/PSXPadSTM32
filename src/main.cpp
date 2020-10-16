@@ -8,14 +8,17 @@
 #define ATT PA4
 #define LED_PIN PC13
 
-uint8_t cmd[6];
+uint8_t cmd[9];
 uint8_t data[6] = {0xFF, 0xFF, 0x08, 0x08, 0x08, 0x08};
+uint8_t smallMotorForce = 0;
+uint8_t largeMotorForce = 0;
 
 bool configMode = false;
-bool analogMode = true;
+bool analogMode = false;
 
 uint8_t buttons[6] = {0xFF, 0xFF, 0x7F, 0x7F, 0x7F, 0x7F};
 uint8_t buttonsIndex = 0;
+
 
 void setup()
 {
@@ -24,20 +27,22 @@ void setup()
 
     Wire.begin();
     delay(100);
-    pinMode(ACK, OUTPUT);
+    // pinMode(ACK, OUTPUT);
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, analogMode ? HIGH : LOW);
+    digitalWrite(LED_PIN, analogMode ? LOW : HIGH);
 
-
-    SPI.beginTransactionSlave(SPISettings(50000000, LSBFIRST, SPI_MODE3, DATA_SIZE_8BIT));
+    // SPI.beginTransactionSlave(SPISettings(50000000, LSBFIRST, SPI_MODE3, DATA_SIZE_8BIT));
 }
 
 inline static int8_t ack()
 {
+    // pinMode(ACK, OUTPUT);
+    // digitalWrite(ACK, HIGH);
     delayMicroseconds(5);
     digitalWrite(ACK, LOW);
     delayMicroseconds(3);
     digitalWrite(ACK, HIGH);
+    // pinMode(ACK, INPUT);
     return 0;
 }
 
@@ -47,15 +52,17 @@ bool knownCommand(const uint8_t &cmd)
            (cmd == 0x47) || (cmd == 0x4C) || (cmd == 0x4D);
 }
 
-void exchangeCmdData(uint8_t &cmd, const uint8_t &data) { cmd = SPI.transfer(data); }
+void exchangeCmdData(uint8_t &cmd, const uint8_t &data)
+{
+    cmd = SPI.transfer(data);
+}
 
 void loop()
 {
-    pinMode(ACK, INPUT);
-
     delay(14);
     Wire.beginTransmission(I2C_RPI_SLAVE_ADDR);
-    Wire.write('r');
+    uint8_t i2cData[3] = {'r', smallMotorForce, largeMotorForce};
+    Wire.write(i2cData, 3);
     Wire.endTransmission();
 
     Wire.requestFrom(I2C_RPI_SLAVE_ADDR, 6);
@@ -67,14 +74,14 @@ void loop()
     }
 
     static bool analogChanged = false;
-    if (buttons[0] == 0xFC)  // SELECT + R3
+    if (buttons[0] == 0xFC)  // SELECT + L3
     {
         if (!analogChanged)
         {
             analogMode = !analogMode;
             analogChanged = true;
 
-            digitalWrite(LED_PIN, analogMode ? HIGH : LOW);
+            digitalWrite(LED_PIN, analogMode ? LOW : HIGH);
         }
     }
     else
@@ -82,6 +89,7 @@ void loop()
         analogChanged = false;
     }
 
+    uint8_t numButtonsToSend = analogMode ? 6 : 2;
     pinMode(ACK, OUTPUT);
     SPI.beginTransactionSlave(SPISettings(50000000, LSBFIRST, SPI_MODE3, DATA_SIZE_8BIT));
 
@@ -115,23 +123,23 @@ void loop()
     case 0x43:
     case 0x42:
     {
-        ack();
-        exchangeCmdData(cmd[3], buttons[0]);
-
-        // Enter config mode?
-        configMode = (cmd[3] == 0x01) && cmd[1] == 0x43;
-
-        uint8_t numButtonsToSend = analogMode ? 6 : 2;
-        for (int i = 1; i < numButtonsToSend; ++i)
+        for (int i = 0; i < numButtonsToSend; ++i)
         {
             ack();
-            exchangeCmdData(cmd[4], buttons[i]);
+            exchangeCmdData(cmd[3 + i], buttons[i]);
         }
+        if (cmd[1] == 0x42)
+        {
+            smallMotorForce = cmd[3];
+            largeMotorForce = cmd[4];
+        }
+
+        configMode = (cmd[3] == 0x01) && (cmd[1] == 0x43);
     }
     break;
     case 0x45:
     {
-        uint8_t data[] = {0x03, 0x02, 0x01, 0x02, 0x01, 0x00};
+        uint8_t data[] = {0x01, 0x02, 0x00, 0x02, 0x01, 0x00};
 
         for (const uint8_t &d : data)
         {
@@ -142,7 +150,7 @@ void loop()
     break;
     case 0x47:
     {
-        uint8_t data[] = {0x00, 0x00, 0x02, 0x00, 0x00, 0x00};
+        uint8_t data[] = {0x00, 0x00, 0x02, 0x00, 0x01, 0x00};
 
         for (const uint8_t &d : data)
         {
@@ -154,7 +162,7 @@ void loop()
     case 0x4C:
     {
         uint8_t dataFirst[] = {0x00, 0x00, 0x04, 0x00, 0x00};
-        uint8_t dataSecond[] = {0x00, 0x00, 0x06, 0x00, 0x00};
+        uint8_t dataSecond[] = {0x00, 0x00, 0x07, 0x00, 0x00};
 
         ack();
         exchangeCmdData(cmd[3], 0x00);
@@ -179,8 +187,8 @@ void loop()
     break;
     case 0x46:
     {
-        uint8_t dataFirst[] = {0x00, 0x00, 0x02, 0x00, 0x00};
-        uint8_t dataSecond[] = {0x00, 0x00, 0x00, 0x00, 0x14};
+        uint8_t dataFirst[] = {0x00, 0x01, 0x02, 0x00, 0x0a};
+        uint8_t dataSecond[] = {0x00, 0x01, 0x01, 0x01, 0x14};
 
         ack();
         exchangeCmdData(cmd[3], 0x00);
@@ -204,16 +212,17 @@ void loop()
     }
     break;
     case 0x4D:
-        for (int i = 0; i < 6; ++i)
+        for (int i = 0; i < 6; ++i) // always 6 bytes
         {
             ack();
-            exchangeCmdData(cmd[3], 0xFF);
+            exchangeCmdData(cmd[3 + i], 0xFF);
         }
         Serial1.println("Map vibration motors");
     break;
     }
 
 TERMINATE_LOOP:
+    pinMode(ACK, INPUT);
     SPI.endTransaction();
     SPI.end();
 }
